@@ -4,7 +4,13 @@ metadata:
   name: kubedirectorapps.kubedirector.hpe.com
 spec:
   group: kubedirector.hpe.com
-  version: v1beta1
+  versions:
+  - name: v1beta1
+    served: true
+    storage: true
+  - name: v1beta2
+    served: true
+    storage: false
   names:
     kind: KubeDirectorApp
     listKind: KubeDirectorAppList

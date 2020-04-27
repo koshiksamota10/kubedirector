@@ -1108,6 +1108,7 @@ func queueNotify(
 			deltaFqdns = fqdnsList(cr, deletePending)
 		}
 	}
+
 	if deltaFqdns == "" {
 		// No nodes actually being created/deleted. One example of this
 		// is in the creating case where none have been successfully

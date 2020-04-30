@@ -126,7 +126,7 @@ func StartValidationServer() error {
 	}
 
 	// Fetch certificate secret information
-	certSecret, err := observer.GetSecret(kdNamespace, validatorSecret)
+	certSecret1, err := observer.GetSecret(kdNamespace, validatorSecret)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to read secret(%s) object %v",
@@ -136,7 +136,7 @@ func StartValidationServer() error {
 	}
 
 	// extract cert information from the secret object
-	certBytes, ok := certSecret.Data[appCrt]
+	certBytes1, ok := certSecret1.Data[appCrt]
 	if !ok {
 		return fmt.Errorf(
 			"%s value not found in %s secret",
@@ -144,7 +144,7 @@ func StartValidationServer() error {
 			validatorSecret,
 		)
 	}
-	keyBytes, ok := certSecret.Data[appKey]
+	keyBytes1, ok := certSecret1.Data[appKey]
 	if !ok {
 		return fmt.Errorf(
 			"%s value not found in %s secret",
@@ -153,7 +153,7 @@ func StartValidationServer() error {
 		)
 	}
 
-	signingCertBytes, ok := certSecret.Data[rootCrt]
+	signingCertBytes1, ok := certSecret1.Data[rootCrt]
 	if !ok {
 		return fmt.Errorf(
 			"%s value not found in %s secret",
@@ -163,12 +163,12 @@ func StartValidationServer() error {
 	}
 
 	certPool := x509.NewCertPool()
-	ok = certPool.AppendCertsFromPEM(signingCertBytes)
+	ok = certPool.AppendCertsFromPEM(signingCertBytes1)
 	if !ok {
 		return fmt.Errorf("failed to parse root certificate")
 	}
 
-	sCert, err := tls.X509KeyPair(certBytes, keyBytes)
+	sCert1, err := tls.X509KeyPair(certBytes1, keyBytes1)
 	if err != nil {
 		return err
 	}
@@ -176,9 +176,58 @@ func StartValidationServer() error {
 	server := &http.Server{
 		Addr: ":" + strconv.Itoa(validationPort),
 		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{sCert},
+			Certificates: []tls.Certificate{sCert1},
 		},
 	}
+
+	// Fetch certificate secret information
+	certSecret2, err := observer.GetSecret(kdNamespace, convertorSecret)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to read secret(%s) object %v",
+			convertorSecret,
+			err,
+		)
+	}
+
+	// extract cert information from the secret object
+	certBytes2, ok := certSecret2.Data[appCrt]
+	if !ok {
+		return fmt.Errorf(
+			"%s value not found in %s secret",
+			appCrt,
+			convertorSecret,
+		)
+	}
+	keyBytes2, ok := certSecret2.Data[appKey]
+	if !ok {
+		return fmt.Errorf(
+			"%s value not found in %s secret",
+			appKey,
+			convertorSecret,
+		)
+	}
+
+	signingCertBytes2, ok := certSecret2.Data[rootCrt]
+	if !ok {
+		return fmt.Errorf(
+			"%s value not found in %s secret",
+			rootCrt,
+			convertorSecret,
+		)
+	}
+
+	ok = certPool.AppendCertsFromPEM(signingCertBytes2)
+	if !ok {
+		return fmt.Errorf("failed to parse root certificate")
+	}
+
+	sCert2, err := tls.X509KeyPair(certBytes2, keyBytes2)
+	if err != nil {
+		return err
+	}
+
+	server.TLSConfig.Certificates = append(server.TLSConfig.Certificates, sCert2)
 
 	http.HandleFunc(
 		validationPath,
@@ -192,6 +241,13 @@ func StartValidationServer() error {
 		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(200)
 			w.Write([]byte("ok"))
+		},
+	)
+
+	http.HandleFunc(
+		crdConvertPath,
+		func(w http.ResponseWriter, r *http.Request) {
+			convertor(w, r)
 		},
 	)
 
@@ -219,11 +275,11 @@ func InitValidationServer(
 	}
 
 	// Check to see if webhook secret is already present
-	certSecret, err := observer.GetSecret(kdNamespace, validatorSecret)
+	certSecret1, err := observer.GetSecret(kdNamespace, validatorSecret)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Secret not found, create certs and the secret object
-			certSecret, err = createCertsSecret(
+			certSecret1, err = createCertsSecret(
 				ownerReference,
 				validatorSecret,
 				validatorServiceName,
@@ -246,7 +302,7 @@ func InitValidationServer(
 		}
 	}
 
-	signingCertBytes, ok := certSecret.Data[rootCrt]
+	signingCertBytes1, ok := certSecret1.Data[rootCrt]
 	if !ok {
 		return fmt.Errorf(
 			"%s value not found in %s secret",
@@ -255,16 +311,16 @@ func InitValidationServer(
 		)
 	}
 
-	serviceErr := createWebhookService(
+	serviceErr1 := createWebhookService(
 		ownerReference,
 		validatorServiceName,
 		kdNamespace,
 	)
-	if serviceErr != nil {
+	if serviceErr1 != nil {
 		return fmt.Errorf(
 			"failed to create Service{%s}: %v",
 			validatorServiceName,
-			serviceErr,
+			serviceErr1,
 		)
 	}
 
@@ -273,13 +329,79 @@ func InitValidationServer(
 		validatorWebhook,
 		kdNamespace,
 		validatorServiceName,
-		signingCertBytes,
+		signingCertBytes1,
 	)
 	if validatorErr != nil {
 		return fmt.Errorf(
 			"failed to create validator{%s}: %v",
 			validatorWebhook,
 			validatorErr,
+		)
+	}
+
+	/*
+		// Check to see if webhook secret is already present
+		certSecret2, err := observer.GetSecret(kdNamespace, convertorSecret)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				// Secret not found, create certs and the secret object
+				certSecret2, err = createCertsSecret(
+					ownerReference,
+					convertorSecret,
+					crdConvertServiceName,
+					kdNamespace,
+				)
+				if err != nil {
+					return fmt.Errorf(
+						"failed to create secret(%s) resource %v",
+						convertorSecret,
+						err,
+					)
+				}
+			} else {
+				// Unable to read secret object
+				return fmt.Errorf(
+					"unable to read secret object %s: %v",
+					convertorSecret,
+					err,
+				)
+			}
+		}
+
+		signingCertBytes2, ok := certSecret2.Data[rootCrt]
+		if !ok {
+			return fmt.Errorf(
+				"%s value not found in %s secret",
+				rootCrt,
+				convertorSecret,
+			)
+		}
+	*/
+	serviceErr2 := createWebhookService(
+		ownerReference,
+		crdConvertServiceName,
+		kdNamespace,
+	)
+	if serviceErr2 != nil {
+		return fmt.Errorf(
+			"failed to create Service{%s}: %v",
+			crdConvertServiceName,
+			serviceErr2,
+		)
+	}
+
+	convertorErr := createConversionService(
+		ownerReference,
+		crdConvertWebhook,
+		kdNamespace,
+		crdConvertServiceName,
+		signingCertBytes2,
+	)
+	if convertorErr != nil {
+		return fmt.Errorf(
+			"failed to create convertor{%s}: %v",
+			crdConvertWebhook,
+			convertorErr,
 		)
 	}
 

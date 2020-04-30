@@ -139,6 +139,25 @@ func GetApp(
 	return result, err
 }
 
+// GetConvertorWebhook fetches the webhook convertor resource in
+// KubeDirector's namespace.
+func GetConvertorWebhook(
+	convertor string,
+) (*v1beta1.MutatingWebhookConfiguration, error) {
+
+	kdNamespace, err := shared.GetKubeDirectorNamespace()
+	if err != nil {
+		return nil, err
+	}
+	result := &v1beta1.MutatingWebhookConfiguration{}
+	err = shared.Get(
+		context.TODO(),
+		types.NamespacedName{Namespace: kdNamespace, Name: convertor},
+		result,
+	)
+	return result, err
+}
+
 // GetValidatorWebhook fetches the webhook validator resource in
 // KubeDirector's namespace.
 func GetValidatorWebhook(

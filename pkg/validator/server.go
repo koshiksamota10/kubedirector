@@ -25,6 +25,7 @@ import (
 
 	"github.com/bluek8s/kubedirector/pkg/observer"
 	"github.com/bluek8s/kubedirector/pkg/shared"
+	"github.com/prometheus/common/log"
 	"k8s.io/api/admission/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -77,6 +78,7 @@ func validation(
 			},
 		}
 	} else {
+		log.Info("Admission Request: ", ar.Request)
 		crKind := ar.Request.Kind.Kind
 		// If there is a validation handler for this CR invoke it.
 		if handler, ok := validationHandlers[crKind]; ok {
@@ -180,55 +182,6 @@ func StartValidationServer() error {
 		},
 	}
 
-	// Fetch certificate secret information
-	certSecret2, err := observer.GetSecret(kdNamespace, convertorSecret)
-	if err != nil {
-		return fmt.Errorf(
-			"failed to read secret(%s) object %v",
-			convertorSecret,
-			err,
-		)
-	}
-
-	// extract cert information from the secret object
-	certBytes2, ok := certSecret2.Data[appCrt]
-	if !ok {
-		return fmt.Errorf(
-			"%s value not found in %s secret",
-			appCrt,
-			convertorSecret,
-		)
-	}
-	keyBytes2, ok := certSecret2.Data[appKey]
-	if !ok {
-		return fmt.Errorf(
-			"%s value not found in %s secret",
-			appKey,
-			convertorSecret,
-		)
-	}
-
-	signingCertBytes2, ok := certSecret2.Data[rootCrt]
-	if !ok {
-		return fmt.Errorf(
-			"%s value not found in %s secret",
-			rootCrt,
-			convertorSecret,
-		)
-	}
-
-	ok = certPool.AppendCertsFromPEM(signingCertBytes2)
-	if !ok {
-		return fmt.Errorf("failed to parse root certificate")
-	}
-
-	sCert2, err := tls.X509KeyPair(certBytes2, keyBytes2)
-	if err != nil {
-		return err
-	}
-
-	server.TLSConfig.Certificates = append(server.TLSConfig.Certificates, sCert2)
-
 	http.HandleFunc(
 		validationPath,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -275,11 +228,11 @@ func InitValidationServer(
 	}
 
 	// Check to see if webhook secret is already present
-	certSecret1, err := observer.GetSecret(kdNamespace, validatorSecret)
+	certSecret, err := observer.GetSecret(kdNamespace, validatorSecret)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Secret not found, create certs and the secret object
-			certSecret1, err = createCertsSecret(
+			certSecret, err = createCertsSecret(
 				ownerReference,
 				validatorSecret,
 				validatorServiceName,
@@ -302,7 +255,7 @@ func InitValidationServer(
 		}
 	}
 
-	signingCertBytes1, ok := certSecret1.Data[rootCrt]
+	signingCertBytes, ok := certSecret.Data[rootCrt]
 	if !ok {
 		return fmt.Errorf(
 			"%s value not found in %s secret",
@@ -324,83 +277,17 @@ func InitValidationServer(
 		)
 	}
 
-	validatorErr := createAdmissionService(
+	convertorErr := createAdmissionService(
 		ownerReference,
-		validatorWebhook,
+		convertorWebhook,
 		kdNamespace,
 		validatorServiceName,
-		signingCertBytes1,
-	)
-	if validatorErr != nil {
-		return fmt.Errorf(
-			"failed to create validator{%s}: %v",
-			validatorWebhook,
-			validatorErr,
-		)
-	}
-
-	/*
-		// Check to see if webhook secret is already present
-		certSecret2, err := observer.GetSecret(kdNamespace, convertorSecret)
-		if err != nil {
-			if errors.IsNotFound(err) {
-				// Secret not found, create certs and the secret object
-				certSecret2, err = createCertsSecret(
-					ownerReference,
-					convertorSecret,
-					crdConvertServiceName,
-					kdNamespace,
-				)
-				if err != nil {
-					return fmt.Errorf(
-						"failed to create secret(%s) resource %v",
-						convertorSecret,
-						err,
-					)
-				}
-			} else {
-				// Unable to read secret object
-				return fmt.Errorf(
-					"unable to read secret object %s: %v",
-					convertorSecret,
-					err,
-				)
-			}
-		}
-
-		signingCertBytes2, ok := certSecret2.Data[rootCrt]
-		if !ok {
-			return fmt.Errorf(
-				"%s value not found in %s secret",
-				rootCrt,
-				convertorSecret,
-			)
-		}
-	*/
-	serviceErr2 := createWebhookService(
-		ownerReference,
-		crdConvertServiceName,
-		kdNamespace,
-	)
-	if serviceErr2 != nil {
-		return fmt.Errorf(
-			"failed to create Service{%s}: %v",
-			crdConvertServiceName,
-			serviceErr2,
-		)
-	}
-
-	convertorErr := createConversionService(
-		ownerReference,
-		crdConvertWebhook,
-		kdNamespace,
-		crdConvertServiceName,
-		signingCertBytes2,
+		signingCertBytes,
 	)
 	if convertorErr != nil {
 		return fmt.Errorf(
-			"failed to create convertor{%s}: %v",
-			crdConvertWebhook,
+			"failed to create validator{%s}: %v",
+			convertorWebhook,
 			convertorErr,
 		)
 	}

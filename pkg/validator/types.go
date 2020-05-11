@@ -31,9 +31,7 @@ const (
 	validationPort         = 8443
 	validationPath         = "/validate"
 	healthPath             = "/healthz"
-	crdConvertServiceName  = "kubedirector-convertor"
-	crdConvertWebhook      = "kubedirector-conv-webhook"
-	convertorSecret        = "kubedirector-convertor-secret"
+	convertorWebhook       = "kubedirector-conv-webhook"
 	convWebhookHandlerName = "convertor-cr.kubedirector.hpe.com"
 	crdConvertPath         = "/crdconvert"
 	defaultNativeSystemd   = false
